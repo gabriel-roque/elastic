@@ -1,0 +1,81 @@
+version: '3'
+
+networks:
+  frontend:
+    driver: ${NETWORKS_DRIVER}
+  backend:
+    driver: ${NETWORKS_DRIVER}
+
+volumes:
+  elasticsearch-data:
+    driver: ${VOLUMES_DRIVER}
+
+services:
+
+    elasticsearch:
+      restart: always
+      build:
+        context: elasticsearch/
+        args:
+          - ELK_VERSION=${ELK_VERSION}
+      volumes:
+        - elasticsearch-data:/usr/share/elasticsearch/data
+        - ./elasticsearch/config/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml
+      environment:
+        - xpack.monitoring.templates.enabled=true
+        - xpack.watcher.enabled=false
+        - "ES_JAVA_OPTS=-Xms1800m -Xmx1800m"
+        # - network.publish_host="_eth0_"
+        - discovery.type=single-node
+        - ELASTICSEARCH_USERNAME="elastic"
+        - ELASTIC_PASSWORD=${ELASTICSEARCH_PASSWORD}
+      ports:
+        - "9200:9200"
+        - "9300:9300"
+      networks:
+        - frontend
+        - backend
+
+    kibana:
+      restart: always
+      build:
+        context: kibana/
+        args:
+          ELK_VERSION: $ELK_VERSION
+      volumes:
+        - ./kibana/config/kibana.yml:/usr/share/kibana/config/kibana.yml
+      environment:
+        - ELASTICSEARCH_URL=http://elasticsearch:9200
+        - ELASTICSEARCH_HOSTS=["http://elasticsearch:9200"]
+        - ELASTICSEARCH_USERNAME="kibana_system"
+        - ELASTICSEARCH_PASSWORD=${KIBANA_PASSWORD}
+      ports:
+        - "5601:5601"
+      depends_on:
+        - elasticsearch
+      networks:
+        - frontend
+        - backend
+
+    logstash:
+      restart: always
+      build:
+        context: ./logstash
+        args:
+          - ELK_VERSION=${ELK_VERSION}
+      volumes:
+          - ./logstash/config/logstash.yml:/usr/share/logstash/config/logstash.yml
+          - ./logstash/pipeline/:/usr/share/logstash/pipeline/
+      ports:
+        - "5044:5044"
+        - "5000:5000/tcp"
+        - "5000:5000/udp"
+        - "9600:9600"
+      environment:
+        LS_JAVA_OPTS: "-Xmx300m -Xms300m"
+        ELASTIC_PASSWORD: ${ELASTICSEARCH_PASSWORD}
+      networks:
+        - frontend
+        - backend
+      depends_on:
+        - elasticsearch
